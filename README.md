@@ -19,7 +19,6 @@ We borrowed the repo from  [Cong's repository](https://github.com/yrcong/STTran)
 - pandas
 - tqdm
 - yaml
-```
 
 We borrow some compiled code for bbox operations.
 ```
