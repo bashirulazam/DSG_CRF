@@ -44,9 +44,9 @@ We use the dataset [Action Genome](https://www.actiongenome.org/#download) to tr
 ```
  In the experiments for SGCLS/SGDET, we only keep bounding boxes with short edges larger than 16 pixels. Please download the file [object_bbox_and_relationship_filtersmall.pkl](https://drive.google.com/file/d/19BkAwjCw5ByyGyZjFo174Oc3Ud56fkaT/view?usp=sharing) and put it in the ```dataloader```
 
-## Preparing Local-Global Features for Train/Test
+## Preparing Local-Global features for train/test
 
-### Generating Local Features with STTran Backbone
+### Generating local features with STTran backbone
 
 + For pretrained $BACKBONE_MODEL_PATH ([PredCls](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_predcls.tar), [SGCls](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_sgcls.tar), [SGDet](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_sgdet.tar )) for $mode = predcls, sgcls, sgdet:
      + for Training samples
@@ -61,7 +61,7 @@ We use the dataset [Action Genome](https://www.actiongenome.org/#download) to tr
     ```
     For each testing video $vid_name with $mode the precomputed results with features will be saved in ```'results/' + conf.mode + '_backbone_testing/' + vid_name + '.pt'```
     
-### Generating Global Features with DINO_v2
+### Generating global geatures with DINO_v2
 
 The environment setting for local feature generation can not be applied for generating DINO based global frame features. Therefore, we precompute the dino features for each frame and dump them as numpy binary files. To install DINO_v2, please visit their github page [here](https://github.com/facebookresearch/dinov2). 
 
@@ -70,7 +70,7 @@ The environment setting for local feature generation can not be applied for gene
 CUDA_VISIBLE_DEVICES=0 python extract_dino_features_from_frames.py
 ```
 
-### Appending Local and Global Features 
+### Appending local and global features 
 
 + For both training and testing in all three settings (predcls, sgcls, sgdet), run the following script to append the local and global features 
 
