@@ -1,12 +1,12 @@
 # Within-Triplet CRF for Dynamic Scene Graph Generation
-We propose a Within-Triplet Transformer-based CRF model **WT-CRF** to generate dynamic scene graphs of the given video. **WT-CRF** computes the unary and temporal potential of a relationship pair given the local-global within-triplet features and combines these potentials in a Conditional Random Field (CRF) framework. 
+We propose a Within-Triplet Transformer-based CRF model **WT-CRF** to generate dynamic scene graphs of the given video. **WT-CRF** computes the unary and temporal potential of a relationship pair given the local-global within-triplet features and combines these potentials with predicted weights in a Conditional Random Field (CRF) framework. 
 
 
-**About the code**
+## Installation ## 
 
-We borrowed the repo from  [Cong's repository](https://github.com/yrcong/STTran)
+We followed the installation instructions from  [Cong's STTran](https://github.com/yrcong/STTran) repo. 
 
-## Requirements
+### Requirements
 - python=3.6
 - pytorch=1.1
 - scipy=1.1.0
@@ -34,7 +34,7 @@ We provide a pretrained FasterRCNN model for Action Genome. Please download [her
 fasterRCNN/models/faster_rcnn_ag.pth
 ```
 
-## Dataset
+### Dataset
 We use the dataset [Action Genome](https://www.actiongenome.org/#download) to train/evaluate our method. Please process the downloaded dataset with the [Toolkit](https://github.com/JingweiJ/ActionGenome). The directories of the dataset should look like:
 ```
 |-- action_genome
@@ -44,46 +44,76 @@ We use the dataset [Action Genome](https://www.actiongenome.org/#download) to tr
 ```
  In the experiments for SGCLS/SGDET, we only keep bounding boxes with short edges larger than 16 pixels. Please download the file [object_bbox_and_relationship_filtersmall.pkl](https://drive.google.com/file/d/19BkAwjCw5ByyGyZjFo174Oc3Ud56fkaT/view?usp=sharing) and put it in the ```dataloader```
 
-## Train
-You can train the **WT-CRF** with train.py. We trained the model on a RTX 2080ti:
-+ For PredCLS: 
+## Preparing Local-Global Features for Train/Test
+
+### Generating Local Features with STTran Backbone
+
++ For pretrained $BACKBONE_MODEL_PATH ([PredCls](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_predcls.tar), [SGCls](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_sgcls.tar), [SGDet](https://github.com/bashirulazam/DSG_CRF/releases/download/Backbone_v1.0.0/frame_level_sttran_sgdet.tar )) for $mode = predcls, sgcls, sgdet:
+     + for Training samples
+    ```
+    CUDA_VISIBLE_DEVICES=0 python test_backbone_on_training_samples.py -mode $mode -datasize large -data_path dataset/ag/ -backbone_model_path $BACKBONE_MODEL_PATH
+    ```
+    For each training video $vid_name with $mode the precomputed results with features will be saved in ```'results/' + conf.mode + '_backbone_training/' + vid_name + '.pt'```    
+
+    + for Testing samples
+    ```
+    CUDA_VISIBLE_DEVICES=0 python test_backbone_on_testing_samples.py -mode $mode -datasize large -data_path dataset/ag/ -backbone_model_path $BACKBONE_MODEL_PATH
+    ```
+    For each testing video $vid_name with $mode the precomputed results with features will be saved in ```'results/' + conf.mode + '_backbone_testing/' + vid_name + '.pt'```
+    
+### Generating Global Features with DINO_v2
+
+The environment setting for local feature generation can not be applied for generating DINO based global frame features. Therefore, we precompute the dino features for each frame and dump them as numpy binary files. To install DINO_v2, please visit their github page [here](https://github.com/facebookresearch/dinov2). 
+
++ For all video samples, run the following script to precompute the DINO_v2 frame features for global context 
 ```
-python train.py -mode predcls -datasize large -data_path $DATAPATH 
+CUDA_VISIBLE_DEVICES=0 python extract_dino_features_from_frames.py
 ```
-+ For SGCLS: 
+
+### Appending Local and Global Features 
+
++ For both training and testing in all three settings (predcls, sgcls, sgdet), run the following script to append the local and global features 
+
 ```
-python train.py -mode sgcls -datasize large -data_path $DATAPATH 
+CUDA_VISIBLE_DEVICES=0 python add_dino_features_to_backbone_results.py 
 ```
-+ For SGDET: 
+This script will load the local precomputed features for each relationships of each video frames and append the global DINO_v2 features to each of them and save them in another directory with the format  ```'results/' + conf.mode + '_backbone_training_with_dino/' ``` (for training) and  ```'results/' + conf.mode + '_backbone_testing_with_dino/' ``` (for testing). 
+## Piecewise training of unary, temporal, and weight predicting model
+
+### Training unary and temporal model
+You can train the unary and temporal transformer with train_unary_and_temporal.py. We train for 50 epochs.  
++ For $mode = {predcls, sgcls, sgdet}: 
 ```
-python train.py -mode sgdet -datasize large -data_path $DATAPATH 
+CUDA_VISIBLE_DEVICES=0 python train_unary_and_temporal.py -mode $mode  
 ```
+
+### Validation study to choose the best uanry and temporal model
+We have created a validation list of 1000 videos from training set which is not fed to the training procedure. You can run this validation script to report decomposed performance for each epoch and choose the best performing model for the final evaluation on the testing dataset. 
++ For $mode = {predcls, sgcls, sgdet}: 
+```
+CUDA_VISIBLE_DEVICES=0 python val_unary_and_temporal.py -mode $mode  
+```
+
+
+### Train weight predicintig model to combine unary and temporal 
+With the best unary and temporal model, we train the weight model which predict the weights for unary and temporal clique for each relationship
+```
+CUDA_VISIBLE_DEVICES=0 python train_weight.py -unary_model_path $unary_model_path -temporal_model_path $temporal_model_path
+```
+
 
 ## Evaluation
-You can evaluate the **STTran** with test.py.
-+ For PredCLS ([trained Model](https://drive.google.com/file/d/1Sk5qFLWTZmwr63fHpy_C7oIxZSQU16vU/view?usp=sharing)): 
+We can evaluate the **WT-CRF** with the following code
++ For PredCLS ([Unary](https://github.com/bashirulazam/DSG_CRF/releases/download/PredCls_v1.0.0/best_model_unary_only.pt), [Temporal](https://github.com/bashirulazam/DSG_CRF/releases/download/PredCls_v1.0.0/best_model_temporal_only_first_order.pt), [Weight](https://github.com/bashirulazam/DSG_CRF/releases/download/PredCls_v1.0.0/weight_model.pt)): 
 ```
-python test.py -m predcls -datasize large -data_path $DATAPATH -model_path $MODELPATH
+CUDA_VISIBLE_DEVICES=0 python test_unary_and_temporal.py -mode predcls -datasize large -data_path dataset/ag/ -backbone_result_folder results/predcls_backbone_with_dino/ -unary_model_path $unary_model_path  -temporal_model_path $temporal_model_path -weight_model_path $weight_model_path
 ```
-+ For SGCLS ([trained Model](https://drive.google.com/file/d/1ZbJ7JkTEVM9mCI-9e5bCo6uDlKbWttgH/view?usp=sharing)): : 
++ For SGCLS ([Unary](https://github.com/bashirulazam/DSG_CRF/releases/download/SGCls_v1.0.0/best_model_unary_only.pt), [Temporal](https://github.com/bashirulazam/DSG_CRF/releases/download/SGCls_v1.0.0/best_model_temporal_only_first_order.pt), [Weight](https://github.com/bashirulazam/DSG_CRF/releases/download/SGCls_v1.0.0/weight_model.pt)): : 
 ```
-python test.py -m sgcls -datasize large -data_path $DATAPATH -model_path $MODELPATH
+CUDA_VISIBLE_DEVICES=0 python test_unary_and_temporal.py -mode sgcls -datasize large -data_path dataset/ag/ -backbone_result_folder results/sgcls_backbone_with_dino/ -unary_model_path $unary_model_path  -temporal_model_path $temporal_model_path -weight_model_path $weight_model_path
 ```
-+ For SGDET ([trained Model](https://drive.google.com/file/d/1dBE90bQaXB-xogRdyAJa2A5S8RwYvjPp/view?usp=sharing)): : 
++ For SGDET ([Unary](https://github.com/bashirulazam/DSG_CRF/releases/download/SGDet_v1.0.0/best_model_unary_only.pt), [Temporal](https://github.com/bashirulazam/DSG_CRF/releases/download/SGDet_v1.0.0/best_model_temporal_only_first_order.pt), [Weight](https://github.com/bashirulazam/DSG_CRF/releases/download/SGDet_v1.0.0/weight_model.pt)): : 
 ```
-python test.py -m sgdet -datasize large -data_path $DATAPATH -model_path $MODELPATH
-```
+CUDA_VISIBLE_DEVICES=0 python test_unary_and_temporal.py -mode sgdet -datasize large -data_path dataset/ag/ -backbone_result_folder results/sgdet_backbone_with_dino/ -unary_model_path $unary_model_path  -temporal_model_path $temporal_model_path -weight_model_path $weight_model_path
 
-## Citation
-If our work is helpful for your research, please cite our publication:
-```
-@inproceedings{cong2021spatial,
-  title={Spatial-Temporal Transformer for Dynamic Scene Graph Generation},
-  author={Cong, Yuren and Liao, Wentong and Ackermann, Hanno and Rosenhahn, Bodo and Yang, Michael Ying},
-  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision},
-  pages={16372--16382},
-  year={2021}
-}
-```
-## Help 
-When you have any question/idea about the code/paper. Please comment in Github or send us Email. We will reply as soon as possible.
+

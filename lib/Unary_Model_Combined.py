@@ -92,7 +92,7 @@ class MyUnaryTransformer(nn.Module):
         tgt_emb = self.tgt_tok_emb(trg)
         src_mask,  tgt_mask = self.create_mask(src_emb, tgt_emb)
         outs, memory = self.transformer(src_emb, tgt_emb,  src_mask, tgt_mask)
-        return  self.spa_generator(outs), self.con_generator(outs), memory
+        return  self.att_generator(outs), self.spa_generator(outs), self.con_generator(outs), memory
         #This is for Encoder Only Ablation
         #return  self.spa_generator(memory), self.con_generator(memory), memory
 
